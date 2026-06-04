@@ -29,9 +29,11 @@
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   label.fld{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);}
   label.fld input,label.fld select{padding:7px 9px;border:1px solid var(--line2);border-radius:7px;background:#fff;min-width:120px;}
-  .tabs{display:flex;gap:4px;margin-bottom:14px;}
-  .tab{padding:8px 16px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:14px;}
-  .tab.active{background:var(--surface);border-color:var(--line);color:var(--text);font-weight:600;}
+  .tabs{display:inline-flex;gap:3px;margin-bottom:0;background:#ecebe4;padding:4px;border-radius:10px;border:1px solid var(--line);}
+  .tab{padding:8px 16px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:14px;transition:background .15s,color .15s;}
+  .tab:hover{color:var(--text);}
+  .tab.active{background:var(--surface);border-color:var(--line);color:var(--text);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+  .tabs-row{display:flex;align-items:center;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--line);}
   .week-nav{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
   .week-nav .label{font-weight:600;font-size:15px;}
   .lane{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;}
@@ -88,10 +90,12 @@
 
   <div class="stat-grid" id="statGrid"></div>
 
-  <div class="tabs">
-    <button class="tab active" data-view="board">강사별 레인 보드</button>
-    <button class="tab" data-view="calendar">마감일 캘린더</button>
-    <button class="tab" data-view="instructors">강사 관리</button>
+  <div class="tabs-row">
+    <div class="tabs">
+      <button class="tab active" data-view="board">강사별 레인 보드</button>
+      <button class="tab" data-view="calendar">마감일 캘린더</button>
+      <button class="tab" data-view="instructors">강사 관리</button>
+    </div>
   </div>
 
   <div id="view-board">
@@ -102,8 +106,14 @@
       <button class="btn sm" id="thisWeek">이번 주</button>
       <div class="spacer"></div>
       <label class="fld" style="flex-direction:row;align-items:center;gap:6px;">
-        <input type="checkbox" id="prepOnly" style="width:16px;height:16px;cursor:pointer;">
-        <span>배정 준비만 보기</span>
+        <span>현황</span>
+        <select id="statusFilter" style="padding:6px 8px;border:1px solid var(--line2);border-radius:7px;">
+          <option value="all">전체</option>
+          <option value="prep">배정 준비</option>
+          <option value="todo">요청함</option>
+          <option value="doing">작업중</option>
+          <option value="done">완료</option>
+        </select>
       </label>
       <label class="fld" style="flex-direction:row;align-items:center;gap:6px;">
         <span>배정 담당자</span>
@@ -352,15 +362,16 @@
     $('weekLabel').textContent=fmtMD(ws)+' ~ '+fmtMD(we)+(weekOffset===0?' (이번 주)':'');
     fillAssignerFilter();
     var af=$('assignerFilter').value;
-    var prepOnly=$('prepOnly').checked;
+    var sf=$('statusFilter').value; // all/prep/todo/doing/done
+    var sfLabel={all:'전체',prep:'배정 준비',todo:'요청함',doing:'작업중',done:'완료'};
     var lanes=$('lanes');lanes.innerHTML='';
     if(!state.instructors.length){lanes.innerHTML='<div class="panel help">강사 관리 탭에서 강사를 추가하세요.</div>';return;}
     state.instructors.forEach(function(name){
       var allActive=state.tasks.filter(function(t){
         if(t.instructor!==name)return false;
         if(af!=='all'&&t.assigner!==af)return false;
-        if(prepOnly)return t.status==='prep';
-        return t.status==='todo'||t.status==='doing'; // 배정 준비·완료 제외
+        if(sf==='all')return true;        // 전체: 완료 포함 모든 상태
+        return t.status===sf;             // 특정 현황만
       });
       allActive.sort(function(a,b){
         if(!a.due&&!b.due)return 0;
@@ -370,7 +381,8 @@
       });
       var cards=allActive.map(function(t){return taskCard(t);}).join('');
       if(!cards){
-        var emptyMsg=prepOnly?'배정 준비 작업 없음':(af==='all'?'진행중 작업 없음':'해당 담당자 배정 작업 없음');
+        var emptyMsg=(sf==='all'?'표시할 작업 없음':sfLabel[sf]+' 작업 없음');
+        if(af!=='all')emptyMsg='해당 담당자의 '+emptyMsg;
         cards='<div class="empty-lane">'+emptyMsg+'</div>';
       }
       var totalP=allActive.reduce(function(s,t){return s+(parseInt(t.count,10)||0);},0);
@@ -395,7 +407,7 @@
         dueLine='<div style="margin-top:4px;font-size:11px;color:#9a988e;">마감일 잡힌 작업 없음</div>';
       }
 
-      var gaugeLabel=prepOnly?'배정 준비':(af==='all'?'진행중':af+' 배정');
+      var gaugeLabel=sfLabel[sf]+(af==='all'?'':' · '+af+' 배정');
       var lane=document.createElement('div');
       lane.className='lane';
       lane.innerHTML=
@@ -426,7 +438,7 @@
     $('lanes').classList.add('hidden');
     document.querySelector('.week-nav').classList.add('hidden');
     $('statGrid').classList.add('hidden');
-    document.querySelector('.tabs').classList.add('hidden');
+    document.querySelector('.tabs-row').classList.add('hidden');
     var box=$('instrDetail');box.classList.remove('hidden');
     var mine=state.tasks.filter(function(t){return t.instructor===name;});
     var active=mine.filter(function(t){return t.status!=='done';});
@@ -494,7 +506,7 @@
     $('lanes').classList.remove('hidden');
     document.querySelector('.week-nav').classList.remove('hidden');
     $('statGrid').classList.remove('hidden');
-    document.querySelector('.tabs').classList.remove('hidden');
+    document.querySelector('.tabs-row').classList.remove('hidden');
   }
   /* ---------- 강사 상세: 간트 타임라인 ---------- */
   function renderGantt(tasks){
@@ -876,7 +888,7 @@
     $('nextWeek').addEventListener('click',function(){weekOffset++;renderBoard();});
     $('thisWeek').addEventListener('click',function(){weekOffset=0;renderBoard();});
     $('assignerFilter').addEventListener('change',renderBoard);
-    $('prepOnly').addEventListener('change',renderBoard);
+    $('statusFilter').addEventListener('change',renderBoard);
 
     $('prevMonth').addEventListener('click',function(){monthOffset--;renderCalendar();});
     $('nextMonth').addEventListener('click',function(){monthOffset++;renderCalendar();});
@@ -896,9 +908,16 @@
         var i=parseInt(del.dataset.instrDel,10);
         var nm=state.instructors[i];
         var cnt=state.tasks.filter(function(t){return t.instructor===nm;}).length;
-        var msg='"'+nm+'" 강사를 삭제할까요?';
-        if(cnt)msg+='\n\n이 강사 앞으로 작업 '+cnt+'건이 있습니다. 삭제하면 그 작업은 \'주인 없는 작업\'으로 아래에 남고, 다른 강사로 옮기거나 정리할 수 있습니다.';
-        if(confirm(msg)){state.instructors.splice(i,1);pushMeta();renderAll();}
+        var msg='정말 "'+nm+'" 강사를 삭제하시겠습니까?\n\n';
+        if(cnt)msg+='이 강사 앞으로 작업 '+cnt+'건이 있습니다. 삭제하면 그 작업은 \'주인 없는 작업\'으로 남아, 다른 강사로 옮기거나 정리할 수 있습니다.\n\n';
+        msg+='실수 방지를 위해, 삭제하려면 아래에 강사 이름 "'+nm+'"을(를) 똑같이 입력하세요.';
+        var typed=prompt(msg,'');
+        if(typed==null)return; // 취소
+        if(typed.trim()!==nm){
+          alert('입력한 이름이 "'+nm+'"과(와) 일치하지 않아 삭제를 취소했습니다.');
+          return;
+        }
+        state.instructors.splice(i,1);pushMeta();renderAll();
       }
       if(ren){
         var j=parseInt(ren.dataset.instrRename,10);
