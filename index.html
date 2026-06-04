@@ -334,9 +334,9 @@
   function renderStats(){
     var total=state.tasks.length;
     var done=state.tasks.filter(function(t){return t.status==='done';}).length;
-    var doing=state.tasks.filter(function(t){return t.status==='doing';}).length;
+    var prep=state.tasks.filter(function(t){return t.status==='prep';}).length;
     var openPassages=state.tasks.filter(function(t){return t.status!=='done';}).reduce(function(s,t){return s+(parseInt(t.count,10)||0);},0);
-    $('statGrid').innerHTML=stat('전체 작업',total)+stat('진행중',doing)+stat('완료',done)+stat('남은 지문 수',openPassages);
+    $('statGrid').innerHTML=stat('전체 작업',total)+stat('배정 준비',prep)+stat('완료',done)+stat('남은 지문 수',openPassages);
   }
   function stat(l,v){return '<div class="stat"><div class="l">'+l+'</div><div class="v">'+v+'</div></div>';}
 
@@ -352,14 +352,6 @@
     var lanes=$('lanes');lanes.innerHTML='';
     if(!state.instructors.length){lanes.innerHTML='<div class="panel help">강사 관리 탭에서 강사를 추가하세요.</div>';return;}
     state.instructors.forEach(function(name){
-      var load=loadOf(name,ws);
-      var pct=Math.min(100,Math.round(load/state.cap*100));
-      var room=state.cap-load;
-      var color,roomTxt,roomColor,roomBg;
-      if(load<=state.cap*0.7){color='#0f6e56';roomTxt='여유 '+room+'지문';roomColor='#0f6e56';roomBg='#e1f5ee';}
-      else if(load<=state.cap){color='#854f0b';roomTxt='여유 '+room+'지문';roomColor='#854f0b';roomBg='#faeeda';}
-      else{color='#a32d2d';roomTxt='초과 '+Math.abs(room)+'지문';roomColor='#a32d2d';roomBg='#fcebeb';}
-
       var allActive=state.tasks.filter(function(t){
         if(t.instructor!==name)return false;
         if(af!=='all'&&t.assigner!==af)return false;
@@ -373,8 +365,29 @@
         return a.due<b.due?-1:1;
       });
       var cards=allActive.map(function(t){return taskCard(t);}).join('');
-      if(!cards)cards='<div class="empty-lane">'+(af==='all'?'진행중 작업 없음':'해당 담당자 배정 작업 없음')+'</div>';
+      if(!cards){
+        var emptyMsg=prepOnly?'배정 준비 작업 없음':(af==='all'?'진행중 작업 없음':'해당 담당자 배정 작업 없음');
+        cards='<div class="empty-lane">'+emptyMsg+'</div>';
+      }
       var totalP=allActive.reduce(function(s,t){return s+(parseInt(t.count,10)||0);},0);
+
+      // 게이지·여유 배지: 토글 상태에 따라 기준이 달라짐
+      var pct,color,roomTxt,roomColor,roomBg,showGauge;
+      if(prepOnly){
+        // 배정 준비만 보기: 아직 강사에게 안 넘긴 계획이라 '주당 적정(cap)' 부하 개념이 안 맞음
+        // → 게이지는 숨기고, 계획으로 잡아둔 지문 양만 표시
+        showGauge=false;
+        roomTxt='계획 '+totalP+'지문';roomColor='#5f5e5a';roomBg='#f1efe8';
+      }else{
+        // 평소: 요청함·작업중 부하를 cap 대비로 게이지에 표시
+        showGauge=true;
+        var load=loadOf(name,ws);
+        pct=Math.min(100,Math.round(load/state.cap*100));
+        var room=state.cap-load;
+        if(load<=state.cap*0.7){color='#0f6e56';roomTxt='여유 '+room+'지문';roomColor='#0f6e56';roomBg='#e1f5ee';}
+        else if(load<=state.cap){color='#854f0b';roomTxt='여유 '+room+'지문';roomColor='#854f0b';roomBg='#faeeda';}
+        else{color='#a32d2d';roomTxt='초과 '+Math.abs(room)+'지문';roomColor='#a32d2d';roomBg='#fcebeb';}
+      }
       // 가장 급한 마감 & 마감 지난 건수
       var today=startOfDay(new Date()).getTime();
       var overdue=allActive.filter(function(t){return t.due&&startOfDay(new Date(t.due)).getTime()<today;});
@@ -389,14 +402,18 @@
       }
       var overdueTxt=overdue.length?' <span style="color:#a32d2d;font-weight:600;">· 마감 지남 '+overdue.length+'건</span>':'';
 
+      var gaugeLabel=prepOnly?'배정 준비':(af==='all'?'진행중':af+' 배정');
+      var gaugeBar=showGauge
+        ? '<div class="gauge-track"><div class="gauge-fill" style="width:'+pct+'%;background:'+color+';"></div></div>'
+        : '';
       var lane=document.createElement('div');
       lane.className='lane';
       lane.innerHTML=
         '<div class="lane-head">'+
           '<div class="lane-name" data-instr-detail="'+esc(name)+'" style="cursor:pointer;text-decoration:underline;text-decoration-color:#cfcdc2;text-underline-offset:3px;" title="클릭하면 이 강사 전체 내역 보기">'+esc(name)+'</div>'+
           '<div class="gauge-wrap">'+
-            '<div class="gauge-track"><div class="gauge-fill" style="width:'+pct+'%;background:'+color+';"></div></div>'+
-            '<div class="gauge-meta">'+(af==='all'?'진행중':af+' 배정')+' 총 '+totalP+'지문('+allActive.length+'건)'+nearestTxt+overdueTxt+'</div>'+
+            gaugeBar+
+            '<div class="gauge-meta">'+gaugeLabel+' 총 '+totalP+'지문('+allActive.length+'건)'+nearestTxt+overdueTxt+'</div>'+
           '</div>'+
           '<span class="room-badge" style="color:'+roomColor+';background:'+roomBg+';">'+roomTxt+'</span>'+
         '</div>'+
@@ -761,6 +778,7 @@
     $('thisWeek').addEventListener('click',function(){weekOffset=0;renderBoard();});
     $('capInput').addEventListener('change',function(){state.cap=parseInt(this.value,10)||20;localStorage.setItem(LS_CAP,state.cap);renderBoard();renderStats();pushMeta();});
     $('assignerFilter').addEventListener('change',renderBoard);
+    $('prepOnly').addEventListener('change',renderBoard);
 
     $('prevMonth').addEventListener('click',function(){monthOffset--;renderCalendar();});
     $('nextMonth').addEventListener('click',function(){monthOffset++;renderCalendar();});
