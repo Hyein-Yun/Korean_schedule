@@ -58,7 +58,10 @@
   .cal-cell{background:var(--surface);border:1px solid var(--line);border-radius:8px;min-height:96px;padding:6px;}
   .cal-cell.today{border-color:var(--accent);background:var(--accent-bg);}
   .cal-cell.dim{opacity:.45;}
-  .cal-date{font-size:12px;color:var(--muted);margin-bottom:4px;}
+  .cal-cell .cal-date{font-size:12px;color:var(--muted);margin-bottom:4px;}
+  .cal-cell.sat .cal-date{color:#185fa5;}
+  .cal-cell.sun .cal-date,.cal-cell.holiday .cal-date{color:#a32d2d;font-weight:600;}
+  .cal-holiday{font-size:10px;color:#a32d2d;font-weight:600;margin-bottom:3px;line-height:1.2;}
   .cal-item{font-size:11px;padding:2px 5px;border-radius:5px;margin-bottom:3px;background:var(--bg);border-left:3px solid var(--accent);word-break:keep-all;}
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:18px;z-index:50;}
   .modal{background:var(--surface);border-radius:12px;padding:20px;width:100%;max-width:440px;max-height:90vh;overflow:auto;}
@@ -130,6 +133,11 @@
         <button class="btn primary sm" id="addInstrBtn">강사 추가</button>
       </div>
       <div id="instrList"></div>
+    </div>
+    <div class="panel" id="orphanPanel" style="display:none;">
+      <div style="font-weight:600;margin-bottom:4px;color:var(--danger);">주인 없는 작업</div>
+      <div class="help" style="margin-bottom:10px;">소속 강사가 삭제되어 보드에 안 보이는 작업입니다. 강사를 다시 추가하거나, 아래에서 다른 강사로 옮기세요.</div>
+      <div id="orphanList"></div>
     </div>
   </div>
 </div>
@@ -332,10 +340,26 @@
     '</div>';
   }
 
+  /* ---------- 한국 공휴일 (2025~2026) ---------- */
+  var HOLIDAYS={
+    '2025-01-01':'신정','2025-01-28':'설날 연휴','2025-01-29':'설날','2025-01-30':'설날 연휴',
+    '2025-03-01':'삼일절','2025-03-03':'대체공휴일','2025-05-05':'어린이날·부처님오신날','2025-05-06':'대체공휴일',
+    '2025-06-06':'현충일','2025-08-15':'광복절','2025-10-03':'개천절',
+    '2025-10-05':'추석 연휴','2025-10-06':'추석','2025-10-07':'추석 연휴','2025-10-08':'대체공휴일',
+    '2025-10-09':'한글날','2025-12-25':'성탄절',
+    '2026-01-01':'신정','2026-02-16':'설날 연휴','2026-02-17':'설날','2026-02-18':'설날 연휴',
+    '2026-03-01':'삼일절','2026-03-02':'대체공휴일','2026-05-05':'어린이날','2026-05-24':'부처님오신날','2026-05-25':'대체공휴일',
+    '2026-06-06':'현충일','2026-08-15':'광복절','2026-08-17':'대체공휴일','2026-09-24':'추석 연휴','2026-09-25':'추석','2026-09-26':'추석 연휴',
+    '2026-10-03':'개천절','2026-10-05':'대체공휴일','2026-10-09':'한글날','2026-12-25':'성탄절'
+  };
+
   /* ---------- render: calendar ---------- */
   var DOW=['일','월','화','수','목','금','토'];
   function renderCalendar(){
-    var head=$('calHead');head.innerHTML=DOW.map(function(d){return '<div class="cal-h">'+d+'</div>';}).join('');
+    var head=$('calHead');head.innerHTML=DOW.map(function(d,i){
+      var c=i===0?'color:#a32d2d;':i===6?'color:#185fa5;':'';
+      return '<div class="cal-h" style="'+c+'">'+d+'</div>';
+    }).join('');
     var base=new Date();base.setMonth(base.getMonth()+monthOffset);
     var y=base.getFullYear(),m=base.getMonth();
     $('monthLabel').textContent=y+'년 '+(m+1)+'월';
@@ -346,17 +370,24 @@
       var cur=new Date(startGrid);cur.setDate(startGrid.getDate()+i);
       var inMonth=cur.getMonth()===m;
       var iso=isoDate(cur);
+      var dow=cur.getDay();
+      var holiday=HOLIDAYS[iso];
       var dayTasks=state.tasks.filter(function(t){return t.due===iso&&t.status!=='done';});
       var cls='cal-cell';
       if(+startOfDay(cur)===+today)cls+=' today';
       if(!inMonth)cls+=' dim';
+      if(holiday)cls+=' holiday';
+      else if(dow===0)cls+=' sun';
+      else if(dow===6)cls+=' sat';
       var items=dayTasks.map(function(t){
         var st=STATUS[t.status]||STATUS.todo;
         return '<div class="cal-item" style="border-left-color:'+st.color+';" title="'+esc(t.instructor)+' · '+esc(t.lecture)+'">'+esc(t.instructor)+' '+esc(t.lecture||'')+' ('+(t.count||0)+')</div>';
       }).join('');
       var cell=document.createElement('div');
       cell.className=cls;
-      cell.innerHTML='<div class="cal-date">'+cur.getDate()+'</div>'+items;
+      cell.innerHTML='<div class="cal-date">'+cur.getDate()+'</div>'+
+        (holiday?'<div class="cal-holiday" title="'+esc(holiday)+'">'+esc(holiday)+'</div>':'')+
+        items;
       grid.appendChild(cell);
       if(i>=35&&cur.getMonth()!==m&&i%7===0)break;
     }
@@ -365,14 +396,32 @@
   /* ---------- render: instructors ---------- */
   function renderInstructors(){
     var box=$('instrList');box.innerHTML='';
-    if(!state.instructors.length){box.innerHTML='<div class="help">등록된 강사가 없습니다.</div>';return;}
+    if(!state.instructors.length){box.innerHTML='<div class="help">등록된 강사가 없습니다.</div>';}
     state.instructors.forEach(function(name,i){
       var active=state.tasks.filter(function(t){return t.instructor===name&&t.status!=='done';}).length;
       var row=document.createElement('div');
       row.className='row';
-      row.style.cssText='justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);';
-      row.innerHTML='<span style="font-weight:600;">'+esc(name)+' <span style="color:var(--muted);font-weight:400;font-size:12px;">진행중 '+active+'건</span></span>'+
+      row.style.cssText='justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);gap:8px;';
+      row.innerHTML='<span style="font-weight:600;flex:1;">'+esc(name)+' <span style="color:var(--muted);font-weight:400;font-size:12px;">진행중 '+active+'건</span></span>'+
+        '<button class="btn sm" data-instr-rename="'+i+'">이름 수정</button>'+
         '<button class="btn sm" data-instr-del="'+i+'">삭제</button>';
+      box.appendChild(row);
+    });
+    renderOrphans();
+  }
+  function renderOrphans(){
+    var panel=$('orphanPanel'),box=$('orphanList');
+    var orphans=state.tasks.filter(function(t){return state.instructors.indexOf(t.instructor)<0;});
+    if(!orphans.length){panel.style.display='none';return;}
+    panel.style.display='';box.innerHTML='';
+    orphans.forEach(function(t){
+      var opts=state.instructors.map(function(n){return '<option value="'+esc(n)+'">'+esc(n)+'</option>';}).join('');
+      var row=document.createElement('div');
+      row.className='row';
+      row.style.cssText='justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);gap:8px;flex-wrap:wrap;';
+      row.innerHTML='<span style="flex:1;min-width:160px;"><b>'+esc(t.lecture||'(강의명 없음)')+'</b> <span style="color:var(--muted);font-size:12px;">지문 '+(t.count||0)+' · 이전 강사: '+esc(t.instructor)+'</span></span>'+
+        (state.instructors.length?'<select data-orphan-to="'+t.id+'" style="padding:6px 8px;border:1px solid var(--line2);border-radius:7px;">'+opts+'</select><button class="btn sm primary" data-orphan-move="'+t.id+'">옮기기</button>':'<span class="help">먼저 강사를 추가하세요</span>')+
+        '<button class="btn sm" data-orphan-del="'+t.id+'">삭제</button>';
       box.appendChild(row);
     });
   }
@@ -479,10 +528,42 @@
       $('newInstr').value='';persist();renderAll();
     });
     $('instrList').addEventListener('click',function(e){
-      var b=e.target.closest('[data-instr-del]');if(!b)return;
-      var i=parseInt(b.dataset.instrDel,10);
-      if(confirm('"'+state.instructors[i]+'" 강사를 삭제할까요? (작업은 유지됩니다)')){
-        state.instructors.splice(i,1);persist();renderAll();
+      var del=e.target.closest('[data-instr-del]');
+      var ren=e.target.closest('[data-instr-rename]');
+      if(del){
+        var i=parseInt(del.dataset.instrDel,10);
+        var nm=state.instructors[i];
+        var cnt=state.tasks.filter(function(t){return t.instructor===nm;}).length;
+        var msg='"'+nm+'" 강사를 삭제할까요?';
+        if(cnt)msg+='\n\n이 강사 앞으로 작업 '+cnt+'건이 있습니다. 삭제하면 그 작업은 \'주인 없는 작업\'으로 아래에 남고, 다른 강사로 옮기거나 정리할 수 있습니다.';
+        if(confirm(msg)){state.instructors.splice(i,1);persist();renderAll();}
+      }
+      if(ren){
+        var j=parseInt(ren.dataset.instrRename,10);
+        var old=state.instructors[j];
+        var nv=prompt('새 강사 이름을 입력하세요.',old);
+        if(nv==null)return;
+        nv=nv.trim();
+        if(!nv){alert('이름을 입력하세요.');return;}
+        if(nv!==old&&state.instructors.indexOf(nv)>=0){alert('이미 같은 이름의 강사가 있습니다.');return;}
+        state.instructors[j]=nv;
+        state.tasks.forEach(function(t){if(t.instructor===old)t.instructor=nv;});
+        persist();renderAll();
+      }
+    });
+    $('orphanList').addEventListener('click',function(e){
+      var mv=e.target.closest('[data-orphan-move]');
+      var dl=e.target.closest('[data-orphan-del]');
+      if(mv){
+        var id=mv.dataset.orphanMove;
+        var sel=$('orphanList').querySelector('[data-orphan-to="'+id+'"]');
+        var to=sel?sel.value:null;
+        var t=state.tasks.filter(function(x){return x.id===id;})[0];
+        if(t&&to){t.instructor=to;persist();renderAll();}
+      }
+      if(dl){
+        var did=dl.dataset.orphanDel;
+        if(confirm('이 작업을 삭제할까요?')){state.tasks=state.tasks.filter(function(x){return x.id!==did;});persist();renderAll();}
       }
     });
 
