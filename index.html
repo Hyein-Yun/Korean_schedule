@@ -109,10 +109,6 @@
         <span>배정 담당자</span>
         <select id="assignerFilter" style="padding:6px 8px;border:1px solid var(--line2);border-radius:7px;"><option value="all">전체</option></select>
       </label>
-      <label class="fld" style="flex-direction:row;align-items:center;gap:6px;">
-        <span>주당 적정 지문</span>
-        <input type="number" id="capInput" min="1" style="width:70px;">
-      </label>
     </div>
     <div id="lanes"></div>
     <div id="instrDetail" class="hidden"></div>
@@ -210,6 +206,15 @@
   function startOfDay(d){var x=new Date(d);x.setHours(0,0,0,0);return x;}
   function startOfWeek(d){var x=startOfDay(d);var g=x.getDay();x.setDate(x.getDate()-g);return x;}
   function fmtMD(d){return (d.getMonth()+1)+'/'+d.getDate();}
+  function daysFromToday(dueIso){ // 오늘 기준 며칠 후(양수=미래, 0=오늘, 음수=지남)
+    var d=startOfDay(new Date(dueIso)),today=startOfDay(new Date());
+    return Math.round((d-today)/86400000);
+  }
+  function ddayLabel(diff){ // D-day 짧은 표기
+    if(diff<0)return 'D+'+Math.abs(diff);
+    if(diff===0)return 'D-day';
+    return 'D-'+diff;
+  }
   function isoDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 
@@ -345,7 +350,6 @@
     var ws=weekStart();
     var we=new Date(ws);we.setDate(we.getDate()+6);
     $('weekLabel').textContent=fmtMD(ws)+' ~ '+fmtMD(we)+(weekOffset===0?' (이번 주)':'');
-    $('capInput').value=state.cap;
     fillAssignerFilter();
     var af=$('assignerFilter').value;
     var prepOnly=$('prepOnly').checked;
@@ -371,51 +375,37 @@
       }
       var totalP=allActive.reduce(function(s,t){return s+(parseInt(t.count,10)||0);},0);
 
-      // 게이지·여유 배지: 토글 상태에 따라 기준이 달라짐
-      var pct,color,roomTxt,roomColor,roomBg,showGauge;
-      if(prepOnly){
-        // 배정 준비만 보기: 아직 강사에게 안 넘긴 계획이라 '주당 적정(cap)' 부하 개념이 안 맞음
-        // → 게이지는 숨기고, 계획으로 잡아둔 지문 양만 표시
-        showGauge=false;
-        roomTxt='계획 '+totalP+'지문';roomColor='#5f5e5a';roomBg='#f1efe8';
-      }else{
-        // 평소: 요청함·작업중 부하를 cap 대비로 게이지에 표시
-        showGauge=true;
-        var load=loadOf(name,ws);
-        pct=Math.min(100,Math.round(load/state.cap*100));
-        var room=state.cap-load;
-        if(load<=state.cap*0.7){color='#0f6e56';roomTxt='여유 '+room+'지문';roomColor='#0f6e56';roomBg='#e1f5ee';}
-        else if(load<=state.cap){color='#854f0b';roomTxt='여유 '+room+'지문';roomColor='#854f0b';roomBg='#faeeda';}
-        else{color='#a32d2d';roomTxt='초과 '+Math.abs(room)+'지문';roomColor='#a32d2d';roomBg='#fcebeb';}
-      }
-      // 가장 급한 마감 & 마감 지난 건수
+      // 잡혀 있는 마감일들을 나열 (가까운 순) + 오늘 기준 D-day
       var today=startOfDay(new Date()).getTime();
-      var overdue=allActive.filter(function(t){return t.due&&startOfDay(new Date(t.due)).getTime()<today;});
-      var withDue=allActive.filter(function(t){return t.due;});
-      var nearestTxt='';
+      var withDue=allActive.filter(function(t){return t.due;}); // allActive는 이미 마감일순 정렬됨
+      var noDueCnt=allActive.length-withDue.length;
+      var overdueCnt=0;
+      var dueChips=withDue.map(function(t){
+        var diff=daysFromToday(t.due);
+        var cc='#6b6a64',cbg='#f1efe8';
+        if(diff<0){cc='#a32d2d';cbg='#fcebeb';overdueCnt++;}
+        else if(diff<=3){cc='#854f0b';cbg='#faeeda';}
+        return '<span style="display:inline-block;font-size:11px;padding:1px 7px;border-radius:6px;background:'+cbg+';color:'+cc+';font-weight:600;margin:1px 2px 1px 0;white-space:nowrap;">'+fmtMD(startOfDay(new Date(t.due)))+' '+ddayLabel(diff)+'</span>';
+      }).join('');
+      var dueLine='';
       if(withDue.length){
-        var nearest=withDue[0]; // 이미 마감일순 정렬됨
-        var nd=startOfDay(new Date(nearest.due)),diff=Math.round((nd-today)/86400000);
-        var ndLabel=fmtMD(nd);
-        if(diff<0)ndLabel+=' (지남)';else if(diff===0)ndLabel='오늘';else if(diff===1)ndLabel='내일';
-        nearestTxt=' · 가장 급한 마감 '+ndLabel;
+        dueLine='<div style="margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;gap:1px;"><span style="font-size:11px;color:#9a988e;margin-right:4px;">마감</span>'+dueChips+
+          (noDueCnt?'<span style="font-size:11px;color:#9a988e;margin-left:4px;">+ 마감미정 '+noDueCnt+'건</span>':'')+'</div>';
+      }else if(noDueCnt){
+        dueLine='<div style="margin-top:4px;font-size:11px;color:#9a988e;">마감일 잡힌 작업 없음</div>';
       }
-      var overdueTxt=overdue.length?' <span style="color:#a32d2d;font-weight:600;">· 마감 지남 '+overdue.length+'건</span>':'';
 
       var gaugeLabel=prepOnly?'배정 준비':(af==='all'?'진행중':af+' 배정');
-      var gaugeBar=showGauge
-        ? '<div class="gauge-track"><div class="gauge-fill" style="width:'+pct+'%;background:'+color+';"></div></div>'
-        : '';
       var lane=document.createElement('div');
       lane.className='lane';
       lane.innerHTML=
         '<div class="lane-head">'+
           '<div class="lane-name" data-instr-detail="'+esc(name)+'" style="cursor:pointer;text-decoration:underline;text-decoration-color:#cfcdc2;text-underline-offset:3px;" title="클릭하면 이 강사 전체 내역 보기">'+esc(name)+'</div>'+
-          '<div class="gauge-wrap">'+
-            gaugeBar+
-            '<div class="gauge-meta">'+gaugeLabel+' 총 '+totalP+'지문('+allActive.length+'건)'+nearestTxt+overdueTxt+'</div>'+
+          '<div class="gauge-wrap" style="max-width:none;">'+
+            '<div class="gauge-meta">'+gaugeLabel+' 총 '+totalP+'지문('+allActive.length+'건)'+
+              (overdueCnt?' <span style="color:#a32d2d;font-weight:600;">· 마감 지남 '+overdueCnt+'건</span>':'')+'</div>'+
+            dueLine+
           '</div>'+
-          '<span class="room-badge" style="color:'+roomColor+';background:'+roomBg+';">'+roomTxt+'</span>'+
         '</div>'+
         '<div class="lane-body">'+cards+'</div>';
       lanes.appendChild(lane);
@@ -461,6 +451,9 @@
     var initial=name.charAt(0);
     var rangeLabel=(detailFrom||detailTo)?((detailFrom||'처음')+' ~ '+(detailTo||'현재')+' 배정분'):'전체 기간';
 
+    // 간트: 진행 중 전부 + (기간 필터 걸린) 완료 작업
+    var ganttHtml=renderGantt(active.concat(done));
+
     var html='';
     html+='<button class="btn" id="backToBoard" style="margin-bottom:14px;font-size:14px;padding:9px 16px;">← 전체 보드로 돌아가기</button>';
     html+='<div style="background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;">'+
@@ -481,6 +474,7 @@
           '<div style="font-size:13px;color:var(--muted);margin-bottom:4px;">'+esc(rangeLabel)+'</div>'+
           '<div style="font-size:26px;font-weight:700;color:#534ab7;">'+doneP+'지문 <span style="font-size:14px;font-weight:400;color:var(--muted);">완료 ('+done.length+'건)</span></div>'+
         '</div>'+
+        ganttHtml+
         '<div style="font-weight:600;font-size:15px;margin:0 0 10px;">진행 중 ('+active.length+')</div>'+
         '<div class="lane-body" style="padding:0;">'+(active.length?active.map(taskCard).join(''):'<div class="empty-lane">진행 중 작업 없음</div>')+'</div>'+
         '<div style="font-weight:600;font-size:15px;margin:20px 0 10px;color:var(--muted);">완료 '+(detailFrom||detailTo?'(이 기간 '+done.length+'건)':'(전체 '+done.length+'건)')+'</div>'+
@@ -502,17 +496,113 @@
     $('statGrid').classList.remove('hidden');
     document.querySelector('.tabs').classList.remove('hidden');
   }
+  /* ---------- 강사 상세: 간트 타임라인 ---------- */
+  function renderGantt(tasks){
+    // start+due 둘 다 있는 작업만 막대로 표현 가능
+    var bars=tasks.filter(function(t){return t.start&&t.due;});
+    if(!bars.length){
+      return '<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;color:var(--hint);font-size:13px;">기간(배정일~마감일)이 있는 작업이 없어 타임라인을 그릴 수 없어요. 배정일과 마감일이 모두 입력된 작업만 막대로 표시됩니다.</div>';
+    }
+    // 전체 표시 범위: 가장 이른 배정일 ~ 가장 늦은 마감일 (양쪽 1일 여백)
+    var minT=Infinity,maxT=-Infinity;
+    bars.forEach(function(t){
+      var s=startOfDay(new Date(t.start)).getTime(),e=startOfDay(new Date(t.due)).getTime();
+      if(s<minT)minT=s;if(e>maxT)maxT=e;
+    });
+    var dayMs=86400000;
+    var startDay=new Date(minT-dayMs), endDay=new Date(maxT+dayMs);
+    var totalDays=Math.round((endDay-startDay)/dayMs)+1;
+    if(totalDays<1)totalDays=1;
+    var todayT=startOfDay(new Date()).getTime();
+
+    // 마감일 가까운 순으로 행 정렬
+    bars.sort(function(a,b){return a.due<b.due?-1:(a.due>b.due?1:0);});
+
+    // 날짜 눈금: 일요일/월요일 기준 주 단위로 라벨, 너무 빽빽하면 간격 조정
+    var labelEvery=1;
+    if(totalDays>21)labelEvery=7; else if(totalDays>10)labelEvery=2;
+
+    var colW=Math.max(100/totalDays,0); // %
+    // 헤더 눈금
+    var ticks='';
+    for(var i=0;i<totalDays;i++){
+      var cur=new Date(startDay.getTime()+i*dayMs);
+      var isToday=startOfDay(cur).getTime()===todayT;
+      var dow=cur.getDay();
+      var showLabel=(i%labelEvery===0)||isToday;
+      var labelColor=dow===0?'#a32d2d':dow===6?'#185fa5':'#9a988e';
+      ticks+='<div style="flex:1;min-width:0;text-align:center;font-size:10px;color:'+(isToday?'#fff':labelColor)+';'+
+        (isToday?'background:#534ab7;border-radius:4px;font-weight:700;':'')+
+        'padding:2px 0;border-left:1px solid '+(isToday?'transparent':'#f0eee7')+';">'+
+        (showLabel?(cur.getMonth()+1)+'/'+cur.getDate():'')+'</div>';
+    }
+
+    // 작업 막대 행들
+    var rows=bars.map(function(t){
+      var s=startOfDay(new Date(t.start)).getTime(),e=startOfDay(new Date(t.due)).getTime();
+      var offsetDays=Math.round((s-startDay.getTime())/dayMs);
+      var spanDays=Math.round((e-s)/dayMs)+1;
+      var leftPct=offsetDays/totalDays*100;
+      var widthPct=spanDays/totalDays*100;
+      var st=STATUS[t.status]||STATUS.todo;
+      var done=t.status==='done';
+      var overdue=!done&&e<todayT;
+      // 막대 색: 완료=초록계열 옅게, 진행=상태색, 마감지남=빨강
+      var barBg,barText='#fff';
+      if(done){barBg='#9fcab9';barText='#0f4233';}
+      else if(overdue){barBg='#d9534f';}
+      else if(t.status==='doing'){barBg='#d98a2b';}
+      else if(t.status==='todo'){barBg='#3b82c4';}
+      else{barBg='#9a988e';} // prep 등
+      var label=esc(t.lecture||'(강의명 없음)')+' · '+(t.count||0)+'지문';
+      return '<div style="display:flex;align-items:center;height:30px;margin-bottom:5px;">'+
+        '<div style="position:relative;flex:1;height:100%;">'+
+          '<div title="'+label+' ('+fmtMD(new Date(s))+'~'+fmtMD(new Date(e))+')" '+
+            'style="position:absolute;left:'+leftPct+'%;width:'+widthPct+'%;top:3px;height:24px;background:'+barBg+';color:'+barText+';border-radius:5px;font-size:11px;font-weight:600;display:flex;align-items:center;padding:0 7px;overflow:hidden;white-space:nowrap;'+(done?'opacity:.85;':'')+'">'+
+            label+'</div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+
+    // 오늘 세로선 (범위 안에 있을 때만)
+    var todayLine='';
+    if(todayT>=startDay.getTime()&&todayT<=endDay.getTime()){
+      var todayOffset=Math.round((todayT-startDay.getTime())/dayMs);
+      var todayPct=(todayOffset+0.5)/totalDays*100;
+      todayLine='<div style="position:absolute;left:'+todayPct+'%;top:0;bottom:0;width:2px;background:#534ab7;opacity:.5;z-index:1;"></div>';
+    }
+
+    return '<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px;overflow-x:auto;">'+
+      '<div style="font-weight:600;margin-bottom:10px;">촬영 기간 타임라인 <span style="font-size:12px;color:var(--muted);font-weight:400;">(배정일~마감일, 막대 = 강의·지문 수)</span></div>'+
+      '<div style="min-width:520px;">'+
+        '<div style="display:flex;margin-bottom:8px;">'+ticks+'</div>'+
+        '<div style="position:relative;">'+todayLine+rows+'</div>'+
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--muted);">'+
+          '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82c4;vertical-align:middle;margin-right:4px;"></span>요청함</span>'+
+          '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d98a2b;vertical-align:middle;margin-right:4px;"></span>작업중</span>'+
+          '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#9fcab9;vertical-align:middle;margin-right:4px;"></span>완료</span>'+
+          '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d9534f;vertical-align:middle;margin-right:4px;"></span>마감 지남</span>'+
+          '<span><span style="display:inline-block;width:10px;height:2px;background:#534ab7;vertical-align:middle;margin-right:4px;"></span>오늘</span>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }
+
   function taskCard(t){
     var st=STATUS[t.status]||STATUS.todo;
-    var dueTxt='마감 없음', dueStyle='', overdue=false;
+    // 마감일 배지 (카드에서 가장 강조되는 요소)
+    var dueBadge='';
+    var overdue=false;
     if(t.due){
-      var d=startOfDay(new Date(t.due));var today=startOfDay(new Date());
-      var diff=Math.round((d-today)/86400000);
-      dueTxt=fmtMD(d);
-      if(diff<0){dueTxt+=' (지남)';dueStyle='color:#a32d2d;font-weight:600;';overdue=true;}
-      else if(diff===0){dueTxt='오늘';dueStyle='color:#a32d2d;font-weight:600;';}
-      else if(diff===1){dueTxt='내일';dueStyle='color:#854f0b;font-weight:600;';}
-      else if(diff<=3){dueTxt+=' ('+diff+'일)';dueStyle='color:#854f0b;';}
+      var diff=daysFromToday(t.due);
+      var dc='#0f6e56',dbg='#e1f5ee'; // 기본: 여유(초록)
+      if(diff<0){dc='#a32d2d';dbg='#fcebeb';overdue=true;}        // 지남: 빨강
+      else if(diff<=1){dc='#a32d2d';dbg='#fcebeb';}               // 오늘/내일: 빨강
+      else if(diff<=3){dc='#854f0b';dbg='#faeeda';}               // 임박: 주황
+      dueBadge='<span style="display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;padding:3px 9px;border-radius:7px;background:'+dbg+';color:'+dc+';white-space:nowrap;">'+
+        fmtMD(startOfDay(new Date(t.due)))+' <span style="font-size:11px;font-weight:600;opacity:.85;">'+ddayLabel(diff)+'</span></span>';
+    }else{
+      dueBadge='<span style="font-size:12px;color:#9a988e;white-space:nowrap;">마감 미정</span>';
     }
     var cardBg=overdue&&t.status!=='done'?'background:#fcebeb;':'background:#fff;';
     var prepStyle=t.status==='prep'?'border-style:dashed;border-left-style:solid;':'';
@@ -524,7 +614,7 @@
       if(days>=1){
         var perDay=(parseInt(t.count,10)||0)/days;
         var pd=Math.round(perDay*10)/10;
-        var pace,pcolor,pbg;
+        var pcolor,pbg;
         if(perDay<=1.5){pcolor='#0f6e56';pbg='#e1f5ee';}
         else if(perDay<=2.5){pcolor='#854f0b';pbg='#faeeda';}
         else{pcolor='#a32d2d';pbg='#fcebeb';}
@@ -534,11 +624,13 @@
       paceHtml='<div class="meta" style="margin-top:4px;"><span style="font-size:11px;color:#6b6a64;">배정 '+fmtMD(startOfDay(new Date(t.start)))+' (마감일 미정)</span></div>';
     }
     return '<div class="card" style="border-left-color:'+st.color+';'+cardBg+prepStyle+'">'+
-      '<div class="lec">'+esc(t.lecture||'(강의명 없음)')+'</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;">'+
+        '<div class="lec" style="margin-bottom:0;">'+esc(t.lecture||'(강의명 없음)')+'</div>'+
+        dueBadge+
+      '</div>'+
       '<div class="meta">'+
-        '<span class="pill" style="background:'+st.bg+';color:'+st.color+';">'+st.label+'</span>'+
+        '<span style="font-size:11px;color:'+st.color+';font-weight:600;">'+st.label+'</span>'+
         '<span>지문 '+(t.count||0)+'</span>'+
-        '<span style="'+dueStyle+'">📅 '+dueTxt+'</span>'+
         (t.assigner?'<span style="font-size:11px;color:#534ab7;">배정: '+esc(t.assigner)+'</span>':'')+
       '</div>'+
       paceHtml+
@@ -776,7 +868,6 @@
     $('prevWeek').addEventListener('click',function(){weekOffset--;renderBoard();});
     $('nextWeek').addEventListener('click',function(){weekOffset++;renderBoard();});
     $('thisWeek').addEventListener('click',function(){weekOffset=0;renderBoard();});
-    $('capInput').addEventListener('change',function(){state.cap=parseInt(this.value,10)||20;localStorage.setItem(LS_CAP,state.cap);renderBoard();renderStats();pushMeta();});
     $('assignerFilter').addEventListener('change',renderBoard);
     $('prepOnly').addEventListener('change',renderBoard);
 
