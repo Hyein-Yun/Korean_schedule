@@ -456,8 +456,9 @@
     }else{
       data.id=uid();state.tasks.push(data);
     }
+    var saved=state.tasks.filter(function(t){return t.id===(editingId||data.id);})[0];
     $('taskModal').classList.add('hidden');
-    persist();renderAll();
+    pushTask(saved);renderAll();
   }
 
   /* ---------- CSV ---------- */
@@ -480,7 +481,10 @@
         imported.push({id:c[idx.id]||uid(),lecture:c[idx.lecture]||'',instructor:c[idx.instructor]||'',count:parseInt(c[idx.count],10)||1,due:c[idx.due]||null,status:c[idx.status]||'todo',note:c[idx.note]||''});
         var ins=c[idx.instructor];if(ins&&state.instructors.indexOf(ins)<0)state.instructors.push(ins);
       }
-      state.tasks=imported;persist();renderAll();
+      state.tasks=imported;
+      saveLocal();
+      if(url){imported.forEach(function(t){pushTask(t);});pushMeta();}
+      renderAll();
       alert(imported.length+'건 불러왔습니다.');
     };
     rd.readAsText(file);
@@ -516,7 +520,7 @@
     $('prevWeek').addEventListener('click',function(){weekOffset--;renderBoard();});
     $('nextWeek').addEventListener('click',function(){weekOffset++;renderBoard();});
     $('thisWeek').addEventListener('click',function(){weekOffset=0;renderBoard();});
-    $('capInput').addEventListener('change',function(){state.cap=parseInt(this.value,10)||20;localStorage.setItem(LS_CAP,state.cap);saveLocal();renderBoard();renderStats();if(url)pushSheet();});
+    $('capInput').addEventListener('change',function(){state.cap=parseInt(this.value,10)||20;localStorage.setItem(LS_CAP,state.cap);renderBoard();renderStats();pushMeta();});
 
     $('prevMonth').addEventListener('click',function(){monthOffset--;renderCalendar();});
     $('nextMonth').addEventListener('click',function(){monthOffset++;renderCalendar();});
@@ -525,7 +529,7 @@
     $('addInstrBtn').addEventListener('click',function(){
       var n=$('newInstr').value.trim();if(!n)return;
       if(state.instructors.indexOf(n)<0)state.instructors.push(n);
-      $('newInstr').value='';persist();renderAll();
+      $('newInstr').value='';pushMeta();renderAll();
     });
     $('instrList').addEventListener('click',function(e){
       var del=e.target.closest('[data-instr-del]');
@@ -536,7 +540,7 @@
         var cnt=state.tasks.filter(function(t){return t.instructor===nm;}).length;
         var msg='"'+nm+'" 강사를 삭제할까요?';
         if(cnt)msg+='\n\n이 강사 앞으로 작업 '+cnt+'건이 있습니다. 삭제하면 그 작업은 \'주인 없는 작업\'으로 아래에 남고, 다른 강사로 옮기거나 정리할 수 있습니다.';
-        if(confirm(msg)){state.instructors.splice(i,1);persist();renderAll();}
+        if(confirm(msg)){state.instructors.splice(i,1);pushMeta();renderAll();}
       }
       if(ren){
         var j=parseInt(ren.dataset.instrRename,10);
@@ -547,8 +551,9 @@
         if(!nv){alert('이름을 입력하세요.');return;}
         if(nv!==old&&state.instructors.indexOf(nv)>=0){alert('이미 같은 이름의 강사가 있습니다.');return;}
         state.instructors[j]=nv;
-        state.tasks.forEach(function(t){if(t.instructor===old)t.instructor=nv;});
-        persist();renderAll();
+        var moved=[];
+        state.tasks.forEach(function(t){if(t.instructor===old){t.instructor=nv;moved.push(t);}});
+        pushMeta();moved.forEach(function(t){pushTask(t);});renderAll();
       }
     });
     $('orphanList').addEventListener('click',function(e){
@@ -559,11 +564,11 @@
         var sel=$('orphanList').querySelector('[data-orphan-to="'+id+'"]');
         var to=sel?sel.value:null;
         var t=state.tasks.filter(function(x){return x.id===id;})[0];
-        if(t&&to){t.instructor=to;persist();renderAll();}
+        if(t&&to){t.instructor=to;pushTask(t);renderAll();}
       }
       if(dl){
         var did=dl.dataset.orphanDel;
-        if(confirm('이 작업을 삭제할까요?')){state.tasks=state.tasks.filter(function(x){return x.id!==did;});persist();renderAll();}
+        if(confirm('이 작업을 삭제할까요?')){state.tasks=state.tasks.filter(function(x){return x.id!==did;});deleteRemote(did);renderAll();}
       }
     });
 
@@ -572,10 +577,12 @@
     $('setModal').addEventListener('click',function(e){if(e.target===this)this.classList.add('hidden');});
     $('saveUrl').addEventListener('click',function(){
       url=$('sheetUrl').value.trim();localStorage.setItem(LS_URL,url);
-      if(url){setSync('on','시트 연동됨');pushSheet();}else setSync('','로컬 저장');
+      if(url){setSync('on','시트 연동됨');pullSheet();startPolling();}else{setSync('','로컬 저장');if(pollTimer)clearInterval(pollTimer);}
     });
-    $('pullBtn').addEventListener('click',pullSheet);
-    $('pushBtn').addEventListener('click',pushSheet);
+    $('pullBtn').addEventListener('click',function(){pullSheet(false);});
+    $('pushBtn').addEventListener('click',function(){
+      state.tasks.forEach(function(t){pushTask(t);});pushMeta();
+    });
     $('exportBtn').addEventListener('click',exportCSV);
     $('importFile').addEventListener('change',function(){if(this.files[0])importCSV(this.files[0]);});
   }
@@ -584,15 +591,15 @@
     var id=b.dataset.id,act=b.dataset.act;
     var t=state.tasks.filter(function(x){return x.id===id;})[0];if(!t)return;
     if(act==='edit')openTask(id);
-    else if(act==='done'){t.status='done';persist();renderAll();}
-    else if(act==='reopen'){t.status='doing';persist();renderAll();}
-    else if(act==='del'){if(confirm('삭제할까요?')){state.tasks=state.tasks.filter(function(x){return x.id!==id;});persist();renderAll();}}
+    else if(act==='done'){t.status='done';pushTask(t);renderAll();}
+    else if(act==='reopen'){t.status='doing';pushTask(t);renderAll();}
+    else if(act==='del'){if(confirm('삭제할까요?')){state.tasks=state.tasks.filter(function(x){return x.id!==id;});deleteRemote(id);renderAll();}}
   }
 
   /* ---------- init ---------- */
   loadLocal();
   bind();
-  if(url){setSync('on','시트 연동됨');pullSheet();}else{setSync('','로컬 저장');}
+  if(url){setSync('on','시트 연동됨');pullSheet(true);startPolling();}else{setSync('','로컬 저장');}
   renderAll();
 })();
 </script>
