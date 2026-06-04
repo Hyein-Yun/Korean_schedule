@@ -196,7 +196,7 @@
   var LS_DATA='ihfb_sched_data', LS_URL='ihfb_sched_url', LS_CAP='ihfb_sched_cap';
   var state={instructors:[],tasks:[],cap:20};
   var url=localStorage.getItem(LS_URL)||'';
-  var weekOffset=0, monthOffset=0, editingId=null;
+  var weekOffset=0, monthOffset=0, editingId=null, editingBaseMod=0;
 
   var STATUS={todo:{label:'요청함',color:'#185fa5',bg:'#e6f1fb'},doing:{label:'작업중',color:'#854f0b',bg:'#faeeda'},done:{label:'완료',color:'#0f6e56',bg:'#e1f5ee'}};
 
@@ -438,10 +438,12 @@
     fillInstrSelect();
     if(id){
       var t=state.tasks.filter(function(x){return x.id===id;})[0];
+      editingBaseMod=t.lastModified||0;
       $('modalTitle').textContent='작업 수정';
       $('m_lec').value=t.lecture||'';$('m_instr').value=t.instructor;$('m_count').value=t.count||1;
       $('m_due').value=t.due||'';$('m_status').value=t.status;$('m_note').value=t.note||'';
     }else{
+      editingBaseMod=0;
       $('modalTitle').textContent='작업 추가';
       $('m_lec').value='';$('m_count').value=1;$('m_due').value='';$('m_status').value='todo';$('m_note').value='';
     }
@@ -451,14 +453,44 @@
     var lec=$('m_lec').value.trim();
     if(!lec){alert('강의명을 입력하세요.');return;}
     var data={lecture:lec,instructor:$('m_instr').value,count:parseInt($('m_count').value,10)||1,due:$('m_due').value||null,status:$('m_status').value,note:$('m_note').value.trim()};
-    if(editingId){
-      state.tasks=state.tasks.map(function(t){return t.id===editingId?Object.assign(t,data):t;});
-    }else{
-      data.id=uid();state.tasks.push(data);
+
+    function commit(){
+      if(editingId){
+        state.tasks=state.tasks.map(function(t){return t.id===editingId?Object.assign(t,data):t;});
+      }else{
+        data.id=uid();state.tasks.push(data);
+      }
+      var saved=state.tasks.filter(function(t){return t.id===(editingId||data.id);})[0];
+      $('taskModal').classList.add('hidden');
+      pushTask(saved);renderAll();
     }
-    var saved=state.tasks.filter(function(t){return t.id===(editingId||data.id);})[0];
-    $('taskModal').classList.add('hidden');
-    pushTask(saved);renderAll();
+
+    // 기존 작업 수정 + 연동 상태일 때만 충돌 점검
+    if(editingId&&url){
+      var btn=$('m_save');btn.disabled=true;btn.textContent='확인 중…';
+      api('getone',{id:editingId}).then(function(res){
+        btn.disabled=false;btn.textContent='저장';
+        var remoteMod=res&&res.task?(res.task.lastModified||0):0;
+        if(res&&res.task&&remoteMod>editingBaseMod){
+          // 내가 연 뒤 누군가 이 작업을 고쳤음
+          var r=res.task;
+          var msg='다른 사람이 방금 이 작업을 수정했습니다.\n\n[상대가 저장한 내용]\n강의: '+(r.lecture||'')+'\n강사: '+(r.instructor||'')+'\n지문: '+(r.count||0)+' / 마감: '+(r.due||'없음')+' / 상태: '+(STATUS[r.status]?STATUS[r.status].label:r.status)+'\n\n확인=내 내용으로 덮어쓰기, 취소=상대 내용 유지(내 수정 버림)';
+          if(confirm(msg)){commit();}
+          else{
+            // 상대 내용 채택
+            state.tasks=state.tasks.map(function(t){return t.id===editingId?Object.assign(t,r):t;});
+            $('taskModal').classList.add('hidden');renderAll();
+          }
+        }else{
+          commit();
+        }
+      }).catch(function(){
+        btn.disabled=false;btn.textContent='저장';
+        commit(); // 점검 실패 시 일단 저장 (연결 문제로 작업을 막지 않음)
+      });
+    }else{
+      commit();
+    }
   }
 
   /* ---------- CSV ---------- */
@@ -577,7 +609,7 @@
     $('setModal').addEventListener('click',function(e){if(e.target===this)this.classList.add('hidden');});
     $('saveUrl').addEventListener('click',function(){
       url=$('sheetUrl').value.trim();localStorage.setItem(LS_URL,url);
-      if(url){setSync('on','시트 연동됨');pullSheet();startPolling();}else{setSync('','로컬 저장');if(pollTimer)clearInterval(pollTimer);}
+      if(url){setSync('on','시트 연동됨');pullSheet();startPolling();}else{setSync('','로컬 저장');stopPolling();}
     });
     $('pullBtn').addEventListener('click',function(){pullSheet(false);});
     $('pushBtn').addEventListener('click',function(){
