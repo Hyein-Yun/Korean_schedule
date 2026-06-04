@@ -1,13 +1,11 @@
-<!-- IHFB 강사 지문 일정 관리 -->
+<!-- IHFB 강사 지문 일정 관리 (최종본) -->
 <meta charset="utf-8">
 <style>
   :root{
     --bg:#f7f6f2; --surface:#ffffff; --line:#e3e1d8; --line2:#cfcdc2;
     --text:#2c2c2a; --muted:#6b6a64; --hint:#9a988e;
     --accent:#185fa5; --accent-bg:#e6f1fb;
-    --ok:#0f6e56; --ok-bg:#e1f5ee;
-    --warn:#854f0b; --warn-bg:#faeeda;
-    --danger:#a32d2d; --danger-bg:#fcebeb;
+    --ok:#0f6e56; --warn:#854f0b; --danger:#a32d2d;
     --radius:10px;
   }
   *{box-sizing:border-box;}
@@ -34,12 +32,12 @@
   .tabs{display:flex;gap:4px;margin-bottom:14px;}
   .tab{padding:8px 16px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--muted);font-size:14px;}
   .tab.active{background:var(--surface);border-color:var(--line);color:var(--text);font-weight:600;}
-  .week-nav{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+  .week-nav{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
   .week-nav .label{font-weight:600;font-size:15px;}
   .lane{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;}
-  .lane-head{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);}
+  .lane-head{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
   .lane-name{font-weight:600;font-size:15px;min-width:90px;}
-  .gauge-wrap{flex:1;max-width:340px;}
+  .gauge-wrap{flex:1;min-width:200px;max-width:340px;}
   .gauge-track{height:9px;border-radius:6px;background:var(--bg);overflow:hidden;}
   .gauge-fill{height:100%;border-radius:6px;transition:width .25s;}
   .gauge-meta{font-size:12px;color:var(--muted);margin-top:3px;}
@@ -76,7 +74,6 @@
   .help{font-size:12px;color:var(--muted);line-height:1.6;}
   code{background:var(--bg);padding:1px 5px;border-radius:4px;font-size:12px;}
   .hidden{display:none;}
-  textarea{width:100%;border:1px solid var(--line2);border-radius:7px;padding:8px;font-size:12px;font-family:ui-monospace,monospace;}
   @media(max-width:560px){.card{max-width:none;}}
 </style>
 
@@ -97,7 +94,6 @@
     <button class="tab" data-view="instructors">강사 관리</button>
   </div>
 
-  <!-- BOARD -->
   <div id="view-board">
     <div class="week-nav">
       <button class="btn sm" id="prevWeek">‹ 이전 주</button>
@@ -113,7 +109,6 @@
     <div id="lanes"></div>
   </div>
 
-  <!-- CALENDAR -->
   <div id="view-calendar" class="hidden">
     <div class="week-nav">
       <button class="btn sm" id="prevMonth">‹</button>
@@ -125,7 +120,6 @@
     <div class="cal" id="calGrid" style="margin-top:6px;"></div>
   </div>
 
-  <!-- INSTRUCTORS -->
   <div id="view-instructors" class="hidden">
     <div class="panel">
       <div class="row" style="margin-bottom:10px;">
@@ -142,7 +136,6 @@
   </div>
 </div>
 
-<!-- Task Modal -->
 <div class="modal-bg hidden" id="taskModal">
   <div class="modal">
     <h3 id="modalTitle">작업 추가</h3>
@@ -167,11 +160,10 @@
   </div>
 </div>
 
-<!-- Settings Modal -->
 <div class="modal-bg hidden" id="setModal">
   <div class="modal">
     <h3>연동 · 데이터</h3>
-    <p class="help">구글 시트 실시간 공유를 켜려면 아래에 Apps Script 웹앱 URL을 넣으세요. (설정 방법은 대화창의 안내 참고)</p>
+    <p class="help">구글 시트 실시간 공유를 켜려면 아래에 Apps Script 웹앱 URL을 넣으세요.</p>
     <label class="fld" style="width:100%;margin-bottom:6px;"><span>웹앱 URL</span><input type="text" id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec"></label>
     <div class="row" style="margin-bottom:14px;">
       <button class="btn sm primary" id="saveUrl">URL 저장</button>
@@ -206,8 +198,8 @@
   function startOfWeek(d){var x=startOfDay(d);var g=x.getDay();x.setDate(x.getDate()-g);return x;}
   function fmtMD(d){return (d.getMonth()+1)+'/'+d.getDate();}
   function isoDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 
-  /* ---------- persistence ---------- */
   function saveLocal(){localStorage.setItem(LS_DATA,JSON.stringify(state));}
   function loadLocal(){
     try{var d=JSON.parse(localStorage.getItem(LS_DATA));if(d){state=d;}}catch(e){}
@@ -222,27 +214,92 @@
     $('syncText').textContent=text;
   }
 
-  /* ---------- sheet sync ---------- */
-  function pushSheet(){
-    if(!url)return;
-    setSync('','동기화 중…');
-    fetch(url,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(state)})
-      .then(function(r){return r.json();})
-      .then(function(){setSync('on','시트 연동됨');})
-      .catch(function(){setSync('err','동기화 실패');});
+  /* ---------- sheet sync (행 단위, 충돌 방지) ---------- */
+  var pollTimer=null;
+  var pendingPush={};
+  var PROTECT_MS=12000;
+
+  function api(action,payload){
+    return fetch(url,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify(Object.assign({action:action},payload||{}))
+    }).then(function(r){return r.json();});
   }
-  function pullSheet(){
-    if(!url){alert('웹앱 URL을 먼저 저장하세요.');return;}
-    setSync('','불러오는 중…');
+  function startPolling(){
+    if(pollTimer)clearInterval(pollTimer);
+    if(!url)return;
+    pollTimer=setInterval(function(){pullSheet(true);},15000);
+  }
+  function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
+
+  function pushTask(t){
+    t.lastModified=Date.now();
+    pendingPush[t.id]=Date.now();
+    saveLocal();
+    if(!url)return;
+    api('upsert',{task:t}).then(function(){setSync('on','시트 연동됨');}).catch(function(){setSync('err','저장 실패');});
+  }
+  function deleteRemote(id){
+    pendingPush[id]=Date.now();
+    saveLocal();
+    if(!url)return;
+    api('delete',{id:id}).then(function(){setSync('on','시트 연동됨');}).catch(function(){setSync('err','삭제 실패');});
+  }
+  function pushMeta(){
+    saveLocal();
+    if(!url)return;
+    api('meta',{instructors:state.instructors,cap:state.cap}).then(function(){setSync('on','시트 연동됨');}).catch(function(){setSync('err','저장 실패');});
+  }
+
+  function mergeTasks(remote){
+    var now=Date.now();
+    var localById={};state.tasks.forEach(function(t){localById[t.id]=t;});
+    var remoteById={};remote.forEach(function(t){remoteById[t.id]=t;});
+    var ids={};Object.keys(localById).forEach(function(k){ids[k]=1;});Object.keys(remoteById).forEach(function(k){ids[k]=1;});
+    var merged=[];
+    Object.keys(ids).forEach(function(id){
+      var l=localById[id],r=remoteById[id];
+      var protectedNow=pendingPush[id]&&(now-pendingPush[id]<PROTECT_MS);
+      if(l&&!r){
+        if(protectedNow)merged.push(l);
+      }else if(!l&&r){
+        merged.push(r);
+      }else if(l&&r){
+        if(protectedNow){merged.push(l);}
+        else{
+          var lm=l.lastModified||0,rm=r.lastModified||0;
+          merged.push(rm>=lm?r:l);
+        }
+      }
+    });
+    return merged;
+  }
+
+  function pullSheet(silent){
+    if(!url){if(!silent)alert('웹앱 URL을 먼저 저장하세요.');return;}
+    if(!silent)setSync('','불러오는 중…');
     fetch(url,{method:'GET'})
       .then(function(r){return r.json();})
       .then(function(d){
-        if(d&&d.tasks){state=d;if(!state.cap)state.cap=20;saveLocal();renderAll();}
+        if(d&&d.tasks){
+          var now=Date.now();
+          Object.keys(pendingPush).forEach(function(k){if(now-pendingPush[k]>=PROTECT_MS)delete pendingPush[k];});
+          state.tasks=mergeTasks(d.tasks.map(function(t){return Object.assign({lastModified:0},t);}));
+          if(d.instructors&&d.instructors.length)state.instructors=d.instructors;
+          if(d.cap)state.cap=d.cap;
+          saveLocal();
+          if(!isTyping())renderAll();
+        }
         setSync('on','시트 연동됨');
       })
-      .catch(function(){setSync('err','불러오기 실패');});
+      .catch(function(){setSync('err','연결 실패');});
   }
-  function persist(){saveLocal();if(url)pushSheet();}
+  function isTyping(){
+    if(!$('taskModal').classList.contains('hidden'))return true;
+    var a=document.activeElement;
+    return a&&(a.tagName==='INPUT'||a.tagName==='SELECT'||a.tagName==='TEXTAREA');
+  }
 
   /* ---------- load calc ---------- */
   function weekStart(){var s=startOfWeek(new Date());s.setDate(s.getDate()+weekOffset*7);return s;}
@@ -266,12 +323,7 @@
     var done=state.tasks.filter(function(t){return t.status==='done';}).length;
     var doing=state.tasks.filter(function(t){return t.status==='doing';}).length;
     var openPassages=state.tasks.filter(function(t){return t.status!=='done';}).reduce(function(s,t){return s+(parseInt(t.count,10)||0);},0);
-    var g=$('statGrid');
-    g.innerHTML=
-      stat('전체 작업',total)+
-      stat('진행중',doing)+
-      stat('완료',done)+
-      stat('남은 지문 수',openPassages);
+    $('statGrid').innerHTML=stat('전체 작업',total)+stat('진행중',doing)+stat('완료',done)+stat('남은 지문 수',openPassages);
   }
   function stat(l,v){return '<div class="stat"><div class="l">'+l+'</div><div class="v">'+v+'</div></div>';}
 
@@ -287,12 +339,11 @@
       var load=loadOf(name,ws);
       var pct=Math.min(100,Math.round(load/state.cap*100));
       var room=state.cap-load;
-      var color,bg,roomTxt,roomColor,roomBg;
-      if(load<=state.cap*0.7){color='#0f6e56';bg='#e1f5ee';roomTxt='여유 '+room+'지문';roomColor='#0f6e56';roomBg='#e1f5ee';}
-      else if(load<=state.cap){color='#854f0b';bg='#faeeda';roomTxt='여유 '+room+'지문';roomColor='#854f0b';roomBg='#faeeda';}
-      else{color='#a32d2d';bg='#fcebeb';roomTxt='초과 '+Math.abs(room)+'지문';roomColor='#a32d2d';roomBg='#fcebeb';}
+      var color,roomTxt,roomColor,roomBg;
+      if(load<=state.cap*0.7){color='#0f6e56';roomTxt='여유 '+room+'지문';roomColor='#0f6e56';roomBg='#e1f5ee';}
+      else if(load<=state.cap){color='#854f0b';roomTxt='여유 '+room+'지문';roomColor='#854f0b';roomBg='#faeeda';}
+      else{color='#a32d2d';roomTxt='초과 '+Math.abs(room)+'지문';roomColor='#a32d2d';roomBg='#fcebeb';}
 
-      var tlist=tasksForInstructorWeek(name,ws);
       var allActive=state.tasks.filter(function(t){return t.instructor===name&&t.status!=='done';});
       var cards=allActive.map(function(t){return taskCard(t);}).join('');
       if(!cards)cards='<div class="empty-lane">진행중 작업 없음</div>';
@@ -356,7 +407,7 @@
   /* ---------- render: calendar ---------- */
   var DOW=['일','월','화','수','목','금','토'];
   function renderCalendar(){
-    var head=$('calHead');head.innerHTML=DOW.map(function(d,i){
+    $('calHead').innerHTML=DOW.map(function(d,i){
       var c=i===0?'color:#a32d2d;':i===6?'color:#185fa5;':'';
       return '<div class="cal-h" style="'+c+'">'+d+'</div>';
     }).join('');
@@ -386,8 +437,7 @@
       var cell=document.createElement('div');
       cell.className=cls;
       cell.innerHTML='<div class="cal-date">'+cur.getDate()+'</div>'+
-        (holiday?'<div class="cal-holiday" title="'+esc(holiday)+'">'+esc(holiday)+'</div>':'')+
-        items;
+        (holiday?'<div class="cal-holiday" title="'+esc(holiday)+'">'+esc(holiday)+'</div>':'')+items;
       grid.appendChild(cell);
       if(i>=35&&cur.getMonth()!==m&&i%7===0)break;
     }
@@ -426,13 +476,12 @@
     });
   }
 
+  function fillInstrSelect(){
+    $('m_instr').innerHTML=state.instructors.map(function(n){return '<option>'+esc(n)+'</option>';}).join('');
+  }
   function renderAll(){renderStats();renderBoard();renderCalendar();renderInstructors();fillInstrSelect();}
-  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 
   /* ---------- modal ---------- */
-  function fillInstrSelect(){
-    var sel=$('m_instr');sel.innerHTML=state.instructors.map(function(n){return '<option>'+esc(n)+'</option>';}).join('');
-  }
   function openTask(id){
     editingId=id||null;
     fillInstrSelect();
@@ -465,32 +514,24 @@
       pushTask(saved);renderAll();
     }
 
-    // 기존 작업 수정 + 연동 상태일 때만 충돌 점검
     if(editingId&&url){
       var btn=$('m_save');btn.disabled=true;btn.textContent='확인 중…';
       api('getone',{id:editingId}).then(function(res){
         btn.disabled=false;btn.textContent='저장';
         var remoteMod=res&&res.task?(res.task.lastModified||0):0;
         if(res&&res.task&&remoteMod>editingBaseMod){
-          // 내가 연 뒤 누군가 이 작업을 고쳤음
           var r=res.task;
           var msg='다른 사람이 방금 이 작업을 수정했습니다.\n\n[상대가 저장한 내용]\n강의: '+(r.lecture||'')+'\n강사: '+(r.instructor||'')+'\n지문: '+(r.count||0)+' / 마감: '+(r.due||'없음')+' / 상태: '+(STATUS[r.status]?STATUS[r.status].label:r.status)+'\n\n확인=내 내용으로 덮어쓰기, 취소=상대 내용 유지(내 수정 버림)';
           if(confirm(msg)){commit();}
           else{
-            // 상대 내용 채택
             state.tasks=state.tasks.map(function(t){return t.id===editingId?Object.assign(t,r):t;});
             $('taskModal').classList.add('hidden');renderAll();
           }
-        }else{
-          commit();
-        }
+        }else{commit();}
       }).catch(function(){
-        btn.disabled=false;btn.textContent='저장';
-        commit(); // 점검 실패 시 일단 저장 (연결 문제로 작업을 막지 않음)
+        btn.disabled=false;btn.textContent='저장';commit();
       });
-    }else{
-      commit();
-    }
+    }else{commit();}
   }
 
   /* ---------- CSV ---------- */
@@ -531,22 +572,29 @@
   }
 
   /* ---------- events ---------- */
+  function cardClick(e){
+    var b=e.target.closest('[data-act]');if(!b)return;
+    var id=b.dataset.id,act=b.dataset.act;
+    var t=state.tasks.filter(function(x){return x.id===id;})[0];if(!t)return;
+    if(act==='edit')openTask(id);
+    else if(act==='done'){t.status='done';pushTask(t);renderAll();}
+    else if(act==='reopen'){t.status='doing';pushTask(t);renderAll();}
+    else if(act==='del'){if(confirm('삭제할까요?')){state.tasks=state.tasks.filter(function(x){return x.id!==id;});deleteRemote(id);renderAll();}}
+  }
+
   function bind(){
     document.querySelectorAll('.tab').forEach(function(tab){
       tab.addEventListener('click',function(){
         document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
         tab.classList.add('active');
         var v=tab.dataset.view;
-        ['board','calendar','instructors'].forEach(function(name){
-          $('view-'+name).classList.toggle('hidden',name!==v);
-        });
+        ['board','calendar','instructors'].forEach(function(name){$('view-'+name).classList.toggle('hidden',name!==v);});
       });
     });
     $('addBtn').addEventListener('click',function(){openTask(null);});
     $('m_cancel').addEventListener('click',function(){$('taskModal').classList.add('hidden');});
     $('m_save').addEventListener('click',saveTask);
     $('taskModal').addEventListener('click',function(e){if(e.target===this)this.classList.add('hidden');});
-
     $('lanes').addEventListener('click',cardClick);
 
     $('prevWeek').addEventListener('click',function(){weekOffset--;renderBoard();});
@@ -563,6 +611,8 @@
       if(state.instructors.indexOf(n)<0)state.instructors.push(n);
       $('newInstr').value='';pushMeta();renderAll();
     });
+    $('newInstr').addEventListener('keydown',function(e){if(e.key==='Enter')$('addInstrBtn').click();});
+
     $('instrList').addEventListener('click',function(e){
       var del=e.target.closest('[data-instr-del]');
       var ren=e.target.closest('[data-instr-rename]');
@@ -609,23 +659,12 @@
     $('setModal').addEventListener('click',function(e){if(e.target===this)this.classList.add('hidden');});
     $('saveUrl').addEventListener('click',function(){
       url=$('sheetUrl').value.trim();localStorage.setItem(LS_URL,url);
-      if(url){setSync('on','시트 연동됨');pullSheet();startPolling();}else{setSync('','로컬 저장');stopPolling();}
+      if(url){setSync('on','시트 연동됨');pullSheet(false);startPolling();}else{setSync('','로컬 저장');stopPolling();}
     });
     $('pullBtn').addEventListener('click',function(){pullSheet(false);});
-    $('pushBtn').addEventListener('click',function(){
-      state.tasks.forEach(function(t){pushTask(t);});pushMeta();
-    });
+    $('pushBtn').addEventListener('click',function(){state.tasks.forEach(function(t){pushTask(t);});pushMeta();});
     $('exportBtn').addEventListener('click',exportCSV);
     $('importFile').addEventListener('change',function(){if(this.files[0])importCSV(this.files[0]);});
-  }
-  function cardClick(e){
-    var b=e.target.closest('[data-act]');if(!b)return;
-    var id=b.dataset.id,act=b.dataset.act;
-    var t=state.tasks.filter(function(x){return x.id===id;})[0];if(!t)return;
-    if(act==='edit')openTask(id);
-    else if(act==='done'){t.status='done';pushTask(t);renderAll();}
-    else if(act==='reopen'){t.status='doing';pushTask(t);renderAll();}
-    else if(act==='del'){if(confirm('삭제할까요?')){state.tasks=state.tasks.filter(function(x){return x.id!==id;});deleteRemote(id);renderAll();}}
   }
 
   /* ---------- init ---------- */
