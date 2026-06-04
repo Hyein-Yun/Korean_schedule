@@ -518,23 +518,24 @@
     // 마감일 가까운 순으로 행 정렬
     bars.sort(function(a,b){return a.due<b.due?-1:(a.due>b.due?1:0);});
 
-    // 날짜 눈금: 일요일/월요일 기준 주 단위로 라벨, 너무 빽빽하면 간격 조정
-    var labelEvery=1;
-    if(totalDays>21)labelEvery=7; else if(totalDays>10)labelEvery=2;
-
-    var colW=Math.max(100/totalDays,0); // %
-    // 헤더 눈금
+    // 날짜 눈금: 모든 날짜 표시 + 요일 + 주말(토·일) 옅은 빨강
+    var DOWK=['일','월','화','수','목','금','토'];
     var ticks='';
     for(var i=0;i<totalDays;i++){
       var cur=new Date(startDay.getTime()+i*dayMs);
       var isToday=startOfDay(cur).getTime()===todayT;
       var dow=cur.getDay();
-      var showLabel=(i%labelEvery===0)||isToday;
-      var labelColor=dow===0?'#a32d2d':dow===6?'#185fa5':'#9a988e';
-      ticks+='<div style="flex:1;min-width:0;text-align:center;font-size:10px;color:'+(isToday?'#fff':labelColor)+';'+
-        (isToday?'background:#534ab7;border-radius:4px;font-weight:700;':'')+
-        'padding:2px 0;border-left:1px solid '+(isToday?'transparent':'#f0eee7')+';">'+
-        (showLabel?(cur.getMonth()+1)+'/'+cur.getDate():'')+'</div>';
+      var weekend=(dow===0||dow===6);
+      var labelColor=dow===0?'#a32d2d':dow===6?'#c2473f':'#9a988e';
+      var cellBg=isToday?'#534ab7':(weekend?'#fbecec':'transparent');
+      var txtColor=isToday?'#fff':labelColor;
+      ticks+='<div style="flex:1;min-width:0;text-align:center;font-size:9px;line-height:1.25;'+
+        'color:'+txtColor+';background:'+cellBg+';'+
+        (isToday?'border-radius:4px;font-weight:700;':(weekend?'border-radius:3px;':''))+
+        'padding:2px 0;">'+
+        '<div'+(isToday?' style="font-weight:700;"':'')+'>'+(cur.getMonth()+1)+'/'+cur.getDate()+'</div>'+
+        '<div style="font-size:8px;opacity:.9;">'+DOWK[dow]+'</div>'+
+        '</div>';
     }
 
     // 작업 막대 행들
@@ -555,7 +556,7 @@
       else if(t.status==='todo'){barBg='#3b82c4';}
       else{barBg='#9a988e';} // prep 등
       var label=esc(t.lecture||'(강의명 없음)')+' · '+(t.count||0)+'지문';
-      return '<div style="display:flex;align-items:center;height:30px;margin-bottom:5px;">'+
+      return '<div style="position:relative;z-index:3;display:flex;align-items:center;height:30px;margin-bottom:5px;">'+
         '<div style="position:relative;flex:1;height:100%;">'+
           '<div title="'+label+' ('+fmtMD(new Date(s))+'~'+fmtMD(new Date(e))+')" '+
             'style="position:absolute;left:'+leftPct+'%;width:'+widthPct+'%;top:3px;height:24px;background:'+barBg+';color:'+barText+';border-radius:5px;font-size:11px;font-weight:600;display:flex;align-items:center;padding:0 7px;overflow:hidden;white-space:nowrap;'+(done?'opacity:.85;':'')+'">'+
@@ -564,19 +565,31 @@
       '</div>';
     }).join('');
 
+    // 주말 세로 줄무늬 (막대 영역 배경)
+    var weekendStripes='';
+    for(var wi=0;wi<totalDays;wi++){
+      var wd=new Date(startDay.getTime()+wi*dayMs).getDay();
+      if(wd===0||wd===6){
+        weekendStripes+='<div style="position:absolute;left:'+(wi/totalDays*100)+'%;width:'+(100/totalDays)+'%;top:0;bottom:0;background:#fbecec;opacity:.6;"></div>';
+      }
+    }
+
     // 오늘 세로선 (범위 안에 있을 때만)
     var todayLine='';
     if(todayT>=startDay.getTime()&&todayT<=endDay.getTime()){
       var todayOffset=Math.round((todayT-startDay.getTime())/dayMs);
       var todayPct=(todayOffset+0.5)/totalDays*100;
-      todayLine='<div style="position:absolute;left:'+todayPct+'%;top:0;bottom:0;width:2px;background:#534ab7;opacity:.5;z-index:1;"></div>';
+      todayLine='<div style="position:absolute;left:'+todayPct+'%;top:0;bottom:0;width:2px;background:#534ab7;opacity:.5;z-index:2;"></div>';
     }
+
+    // 날짜를 모두 찍으므로 하루당 최소 너비 확보 (좁으면 가로 스크롤)
+    var minW=Math.max(520,totalDays*30);
 
     return '<div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px;overflow-x:auto;">'+
       '<div style="font-weight:600;margin-bottom:10px;">촬영 기간 타임라인 <span style="font-size:12px;color:var(--muted);font-weight:400;">(배정일~마감일, 막대 = 강의·지문 수)</span></div>'+
-      '<div style="min-width:520px;">'+
+      '<div style="min-width:'+minW+'px;">'+
         '<div style="display:flex;margin-bottom:8px;">'+ticks+'</div>'+
-        '<div style="position:relative;">'+todayLine+rows+'</div>'+
+        '<div style="position:relative;">'+weekendStripes+todayLine+rows+'</div>'+
         '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:11px;color:var(--muted);">'+
           '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82c4;vertical-align:middle;margin-right:4px;"></span>요청함</span>'+
           '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d98a2b;vertical-align:middle;margin-right:4px;"></span>작업중</span>'+
@@ -606,19 +619,13 @@
     }
     var cardBg=overdue&&t.status!=='done'?'background:#fcebeb;':'background:#fff;';
     var prepStyle=t.status==='prep'?'border-style:dashed;border-left-style:solid;':'';
-    // 기간·하루치 계산
+    // 기간·배정일 (하루치 부담 계산은 강사 자율 촬영 방식과 안 맞아 제거)
     var paceHtml='';
     if(t.start&&t.due){
       var s=startOfDay(new Date(t.start)),e=startOfDay(new Date(t.due));
       var days=Math.round((e-s)/86400000)+1; // 양 끝 포함
       if(days>=1){
-        var perDay=(parseInt(t.count,10)||0)/days;
-        var pd=Math.round(perDay*10)/10;
-        var pcolor,pbg;
-        if(perDay<=1.5){pcolor='#0f6e56';pbg='#e1f5ee';}
-        else if(perDay<=2.5){pcolor='#854f0b';pbg='#faeeda';}
-        else{pcolor='#a32d2d';pbg='#fcebeb';}
-        paceHtml='<div class="meta" style="margin-top:4px;"><span style="font-size:11px;padding:2px 8px;border-radius:6px;background:'+pbg+';color:'+pcolor+';font-weight:600;">기간 '+days+'일 · 하루 '+pd+'지문</span></div>';
+        paceHtml='<div class="meta" style="margin-top:4px;"><span style="font-size:11px;padding:2px 8px;border-radius:6px;background:#f1efe8;color:#5f5e5a;font-weight:600;">기간 '+days+'일</span><span style="font-size:11px;color:#6b6a64;">배정 '+fmtMD(s)+'</span></div>';
       }
     } else if(t.start){
       paceHtml='<div class="meta" style="margin-top:4px;"><span style="font-size:11px;color:#6b6a64;">배정 '+fmtMD(startOfDay(new Date(t.start)))+' (마감일 미정)</span></div>';
