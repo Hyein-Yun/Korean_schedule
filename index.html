@@ -387,10 +387,11 @@
       }
       var totalP=allActive.reduce(function(s,t){return s+(parseInt(t.count,10)||0);},0);
 
-      // 잡혀 있는 마감일들을 나열 (가까운 순) + 오늘 기준 D-day
+      // 마감 요약·D-day·"마감 지남"은 '아직 안 끝난(완료 제외)' 작업만 대상으로 한다.
       var today=startOfDay(new Date()).getTime();
-      var withDue=allActive.filter(function(t){return t.due;}); // allActive는 이미 마감일순 정렬됨
-      var noDueCnt=allActive.length-withDue.length;
+      var pending=allActive.filter(function(t){return t.status!=='done';}); // 완료 건은 마감 요약에서 제외
+      var withDue=pending.filter(function(t){return t.due;}); // pending은 이미 마감일순 정렬됨(allActive 정렬 유지)
+      var noDueCnt=pending.length-withDue.length;
       var overdueCnt=0;
       var dueChips=withDue.map(function(t){
         var diff=daysFromToday(t.due);
@@ -399,12 +400,17 @@
         else if(diff<=3){cc='#854f0b';cbg='#faeeda';}
         return '<span style="display:inline-block;font-size:11px;padding:1px 7px;border-radius:6px;background:'+cbg+';color:'+cc+';font-weight:600;margin:1px 2px 1px 0;white-space:nowrap;">'+fmtMD(startOfDay(new Date(t.due)))+' '+ddayLabel(diff)+'</span>';
       }).join('');
+      var doneCnt=allActive.length-pending.length;
       var dueLine='';
       if(withDue.length){
         dueLine='<div style="margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;gap:1px;"><span style="font-size:11px;color:#9a988e;margin-right:4px;">마감</span>'+dueChips+
-          (noDueCnt?'<span style="font-size:11px;color:#9a988e;margin-left:4px;">+ 마감미정 '+noDueCnt+'건</span>':'')+'</div>';
+          (noDueCnt?'<span style="font-size:11px;color:#9a988e;margin-left:4px;">+ 마감미정 '+noDueCnt+'건</span>':'')+
+          (doneCnt?'<span style="font-size:11px;color:#0f6e56;margin-left:4px;">· 완료 '+doneCnt+'건</span>':'')+'</div>';
       }else if(noDueCnt){
-        dueLine='<div style="margin-top:4px;font-size:11px;color:#9a988e;">마감일 잡힌 작업 없음</div>';
+        dueLine='<div style="margin-top:4px;font-size:11px;color:#9a988e;">마감일 잡힌 진행 작업 없음'+
+          (doneCnt?' <span style="color:#0f6e56;">· 완료 '+doneCnt+'건</span>':'')+'</div>';
+      }else if(doneCnt){
+        dueLine='<div style="margin-top:4px;font-size:11px;color:#0f6e56;">완료 '+doneCnt+'건 (진행 중 작업 없음)</div>';
       }
 
       var gaugeLabel=sfLabel[sf]+(af==='all'?'':' · '+af+' 배정');
@@ -615,21 +621,28 @@
 
   function taskCard(t){
     var st=STATUS[t.status]||STATUS.todo;
+    var isDone=t.status==='done';
     // 마감일 배지 (카드에서 가장 강조되는 요소)
     var dueBadge='';
     var overdue=false;
     if(t.due){
       var diff=daysFromToday(t.due);
-      var dc='#0f6e56',dbg='#e1f5ee'; // 기본: 여유(초록)
-      if(diff<0){dc='#a32d2d';dbg='#fcebeb';overdue=true;}        // 지남: 빨강
-      else if(diff<=1){dc='#a32d2d';dbg='#fcebeb';}               // 오늘/내일: 빨강
-      else if(diff<=3){dc='#854f0b';dbg='#faeeda';}               // 임박: 주황
-      dueBadge='<span style="display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;padding:3px 9px;border-radius:7px;background:'+dbg+';color:'+dc+';white-space:nowrap;">'+
-        fmtMD(startOfDay(new Date(t.due)))+' <span style="font-size:11px;font-weight:600;opacity:.85;">'+ddayLabel(diff)+'</span></span>';
+      if(isDone){
+        // 완료 작업: D-day로 재촉하지 않고 '마감일'만 차분히 표시
+        dueBadge='<span style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:7px;background:#e1f5ee;color:#0f6e56;white-space:nowrap;">'+
+          fmtMD(startOfDay(new Date(t.due)))+' <span style="font-size:11px;font-weight:600;opacity:.85;">완료</span></span>';
+      }else{
+        var dc='#0f6e56',dbg='#e1f5ee'; // 기본: 여유(초록)
+        if(diff<0){dc='#a32d2d';dbg='#fcebeb';overdue=true;}        // 지남: 빨강
+        else if(diff<=1){dc='#a32d2d';dbg='#fcebeb';}               // 오늘/내일: 빨강
+        else if(diff<=3){dc='#854f0b';dbg='#faeeda';}               // 임박: 주황
+        dueBadge='<span style="display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;padding:3px 9px;border-radius:7px;background:'+dbg+';color:'+dc+';white-space:nowrap;">'+
+          fmtMD(startOfDay(new Date(t.due)))+' <span style="font-size:11px;font-weight:600;opacity:.85;">'+ddayLabel(diff)+'</span></span>';
+      }
     }else{
-      dueBadge='<span style="font-size:12px;color:#9a988e;white-space:nowrap;">마감 미정</span>';
+      dueBadge='<span style="font-size:12px;color:#9a988e;white-space:nowrap;">'+(isDone?'완료':'마감 미정')+'</span>';
     }
-    var cardBg=overdue&&t.status!=='done'?'background:#fcebeb;':'background:#fff;';
+    var cardBg=overdue&&!isDone?'background:#fcebeb;':'background:#fff;';
     var prepStyle=t.status==='prep'?'border-style:dashed;border-left-style:solid;':'';
     // 기간·배정일 (하루치 부담 계산은 강사 자율 촬영 방식과 안 맞아 제거)
     var paceHtml='';
